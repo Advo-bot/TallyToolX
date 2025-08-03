@@ -1,86 +1,74 @@
-function Save-TallySnapshot {
-    $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-    $snapshotDir = "$env:USERPROFILE\Documents\TallySnapshot_$timestamp"
-    $null = New-Item -ItemType Directory -Force -Path $snapshotDir
+Clear-Host
 
-    Write-Host "`n📦 Creating Snapshot at $snapshotDir" -ForegroundColor Yellow
-
-    $regBackupPath = Join-Path $snapshotDir "TallyTrial.reg"
-    reg export "HKCU\Software\Tally" $regBackupPath /y | Out-Null
-
-    $tallyPath = "C:\Program Files\Tally"
-    $tallyBackupPath = Join-Path $snapshotDir "TallyFiles"
-    if (Test-Path $tallyPath) {
-        Copy-Item $tallyPath -Destination $tallyBackupPath -Recurse -Force
-        Write-Host "✅ Files backed up from $tallyPath"
-    } else {
-        Write-Host "⚠️ Tally folder not found at $tallyPath"
-    }
-
-    $zipPath = "$snapshotDir.zip"
-    Compress-Archive -Path $snapshotDir -DestinationPath $zipPath -Force
-    Remove-Item $snapshotDir -Recurse -Force
-    Write-Host "✅ Snapshot saved as ZIP: $zipPath" -ForegroundColor Green
+function Show-Menu {
+    Write-Host "`n🔷 Tally ToolX — Ultra-Fast Trial Toolkit"
+    Write-Host "-------------------------------------------"
+    Write-Host "1️⃣  Save Trial Snapshot"
+    Write-Host "2️⃣  Restore Trial Snapshot"
+    Write-Host "3️⃣  Block Internet Access"
+    Write-Host "4️⃣  Exit"
 }
 
-function Restore-TallySnapshot {
-    $zipFile = Get-ChildItem "$env:USERPROFILE\Documents" -Filter "TallySnapshot_*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $zipFile) {
-        Write-Host "❌ No snapshot found to restore!" -ForegroundColor Red
+function Save-Snapshot {
+    $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    $snapshotDir = "$env:USERPROFILE\Documents\TallySnapshot_$timestamp"
+    $tallyPath = "C:\Program Files\TallyPrime"
+
+    if (!(Test-Path $tallyPath)) {
+        Write-Host "❌ TallyPrime folder not found at $tallyPath"
         return
     }
 
-    Write-Host "`n♻️ Restoring snapshot: $($zipFile.Name)" -ForegroundColor Yellow
-
-    $extractPath = "$env:TEMP\TallyRestore"
-    Expand-Archive -Path $zipFile.FullName -DestinationPath $extractPath -Force
-
-    reg import "$extractPath\TallyTrial.reg"
-
-    $restoredPath = Join-Path $extractPath "TallyFiles"
-    $tallyPath = "C:\Program Files\Tally"
-    if (Test-Path $restoredPath) {
-        Copy-Item $restoredPath\* -Destination $tallyPath -Recurse -Force
-        Write-Host "✅ Files restored to $tallyPath"
-    }
-
-    Remove-Item $extractPath -Recurse -Force
-    Write-Host "✅ Trial state restored successfully!" -ForegroundColor Green
+    New-Item -ItemType Directory -Force -Path $snapshotDir | Out-Null
+    $backupPath = Join-Path $snapshotDir "TallyFiles"
+    Copy-Item $tallyPath -Destination $backupPath -Recurse -Force
+    $zipFile = "$snapshotDir.zip"
+    Compress-Archive -Path $snapshotDir -DestinationPath $zipFile -Force
+    Write-Host "`n✅ Snapshot saved: $zipFile"
 }
 
-Clear-Host
-Write-Host "🔷 Tally Trial Toolkit 🔷" -ForegroundColor Cyan
-Write-Host "-----------------------------------"
-Write-Host "1️⃣  Save Current Trial Snapshot"
-Write-Host "2️⃣  Restore Trial Snapshot"
-Write-Host "3️⃣  Block Tally Internet Access"
-Write-Host "4️⃣  Check Trial Status"
-Write-Host "5️⃣  Exit`n"
+function Restore-Snapshot {
+    $zip = Get-ChildItem "$env:USERPROFILE\Documents" -Filter "TallySnapshot_*.zip" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($null -eq $zip) {
+        Write-Host "❌ No snapshot found to restore."
+        return
+    }
 
-$choice = Read-Host "Enter Your Choice [1-5]"
+    $tempPath = "$env:TEMP\TallyToolXRestore"
+    if (Test-Path $tempPath) { Remove-Item $tempPath -Recurse -Force }
+    Expand-Archive -Path $zip.FullName -DestinationPath $tempPath -Force
 
-switch ($choice) {
-    '1' { Save-TallySnapshot }
-    '2' { Restore-TallySnapshot }
-    '3' {
-        Write-Host "`n🚫 Blocking Tally from internet..." -ForegroundColor Yellow
-        try {
-            New-NetFirewallRule -DisplayName "Block Tally" -Direction Outbound -Program "C:\Program Files\Tally\Tally.exe" -Action Block -Enabled True -ErrorAction Stop
-            Write-Host "✅ Internet Blocked for Tally!" -ForegroundColor Green
-        } catch {
-            Write-Host "❌ Failed to apply firewall rule: $_" -ForegroundColor Red
-        }
+    $source = Join-Path $tempPath "TallyFiles"
+    $target = "C:\Program Files\TallyPrime"
+    if (!(Test-Path $source)) {
+        Write-Host "❌ No Tally files found in snapshot."
+        return
     }
-    '4' {
-        Write-Host "`n🔍 Checking Tally Trial Status..." -ForegroundColor Yellow
-        Write-Host "📅 Trial Mode Active — simulated 6 days left" -ForegroundColor Green
-    }
-    '5' {
-        Write-Host "`n👋 Exiting..." -ForegroundColor Magenta
-        exit
-    }
-    Default {
-        Write-Host "`n❌ Invalid Choice! Try again." -ForegroundColor Red
+
+    Copy-Item $source\* -Destination $target -Recurse -Force
+    Write-Host "`n✅ TallyPrime restored from snapshot."
+}
+
+function Block-Internet {
+    $exe = "C:\Program Files\TallyPrime\Tally.exe"
+    $rule = "TallyBlock"
+    if (Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue) {
+        Write-Host "ℹ️ Firewall rule already exists."
+    } else {
+        New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $exe -Action Block
+        Write-Host "✅ Internet blocked for Tally.exe"
     }
 }
 
+# Main Menu Loop
+do {
+    Show-Menu
+    $choice = Read-Host "`nEnter your choice [1-4]"
+    switch ($choice) {
+        '1' { Save-Snapshot }
+        '2' { Restore-Snapshot }
+        '3' { Block-Internet }
+        '4' { Write-Host "`n👋 Exiting..."; break }
+        default { Write-Host "❌ Invalid choice. Try again." }
+    }
+} while ($true)
